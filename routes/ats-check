@@ -1,0 +1,85 @@
+from flask import request, jsonify
+from werkzeug.utils import secure_filename
+import os
+import pdfplumber
+
+# --------------------------
+# Helper Function: ATS Checks
+# --------------------------
+def check_ats_issues_from_pdf(path):
+    issues = {
+        "tables": 0,
+        "images": 0,
+        "multi_column_lines": 0,
+        "fancy_fonts": 0
+    }
+
+    with pdfplumber.open(path) as pdf:
+        for page in pdf.pages:
+            # Count tables
+            tables = page.find_tables()
+            if tables:
+                issues["tables"] += len(tables)
+
+            # Count images
+            issues["images"] += len(page.images)
+
+            # Detect multi-columns by spacing or tabs
+            text = page.extract_text() or ''
+            for line in text.split('\n'):
+                if line.count("  ") > 3 or "\t" in line:
+                    issues["multi_column_lines"] += 1
+
+            # Check for non-standard fonts
+            for obj in page.chars:
+                font = obj.get("fontname", "").lower()
+                if not any(f in font for f in ["arial", "times", "calibri", "helvetica"]):
+                    issues["fancy_fonts"] += 1
+                    break  # Count only once per page
+
+    return issues
+
+# --------------------------
+# Route: /ats-check
+# --------------------------
+@main.route("/ats-check", methods=["POST"])
+def ats_compliance_check():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "Empty filename"}), 400
+
+    ext = file.filename.rsplit('.', 1)[-1].lower()
+    if ext != 'pdf':
+        return jsonify({"error": "Only PDF resumes are supported for ATS check"}), 400
+
+    # Save file
+    filename = secure_filename(file.filename)
+    upload_dir = os.path.join(os.getcwd(), 'uploads')
+    os.makedirs(upload_dir, exist_ok=True)
+    filepath = os.path.join(upload_dir, filename)
+    file.save(filepath)
+
+    # Analyze ATS issues
+    issues = check_ats_issues_from_pdf(filepath)
+
+    # Deduct points based on issues
+    deductions = 0
+    if issues["tables"] > 0:
+        deductions += 20
+    if issues["images"] > 0:
+        deductions += 20
+    if issues["multi_column_lines"] > 3:
+        deductions += 20
+    if issues["fancy_fonts"] > 0:
+        deductions += 10
+
+    ats_score = max(100 - deductions, 0)
+
+    return jsonify({
+        "ats_friendly_score": f"{ats_score}%",
+        "issues_found": issues,
+        "summary": "High ATS compatibility" if ats_score >= 80 else "May have ATS issues"
+    }), 200

@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test Resume Upload</title>
+</head>
+<body>
+  <h2>Upload Resume</h2>
+  <form action="http://127.0.0.1:5000/upload-resume" method="POST" enctype="multipart/form-data">
+    <label>Select a resume (PDF or DOCX):</label><br><br>
+    <input type="file" name="file" accept=".pdf,.docx" required><br><br>
+    <button type="submit">Upload</button>
+  </form>
+</body>
+</html>
